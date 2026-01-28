@@ -1,49 +1,67 @@
-// api/webhook.js
-// Lemon Squeezy 결제 완료 시 호출됨
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+)
 
 export default async function handler(req, res) {
-    // POST 요청만 허용
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+        return res.status(405).json({ error: 'Method not allowed' })
     }
 
     try {
-        const event = req.body;
+        const event = req.body
+        console.log('Webhook received:', event.meta?.event_name)
 
-        console.log('Webhook received:', event);
-
-        // 결제 완료 이벤트인지 확인
+        // 결제 완료
         if (event.meta?.event_name === 'order_created') {
-            const email = event.data?.attributes?.user_email;
-            const productName = event.data?.attributes?.first_order_item?.product_name;
+            const email = event.data?.attributes?.user_email
 
-            console.log(`✅ 새 결제! 이메일: ${email}, 상품: ${productName}`);
+            const { data, error } = await supabase
+                .from('subscribers')
+                .upsert({ 
+                    email: email, 
+                    status: 'active' 
+                }, { 
+                    onConflict: 'email' 
+                })
 
-            // TODO: 여기서 Supabase에 유저 Pro 상태 저장
-            // 지금은 일단 로그만
+            if (error) {
+                console.error('Supabase error:', error)
+            } else {
+                console.log('✅ 저장 완료:', email)
+            }
 
-            return res.status(200).json({ 
-                success: true, 
-                message: `결제 처리 완료: ${email}` 
-            });
+            return res.status(200).json({ success: true })
         }
 
-        // 구독 관련 이벤트
+        // 구독 생성
         if (event.meta?.event_name === 'subscription_created') {
-            const email = event.data?.attributes?.user_email;
-            console.log(`✅ 새 구독! 이메일: ${email}`);
+            const email = event.data?.attributes?.user_email
 
-            return res.status(200).json({ 
-                success: true, 
-                message: `구독 처리 완료: ${email}` 
-            });
+            const { data, error } = await supabase
+                .from('subscribers')
+                .upsert({ 
+                    email: email, 
+                    status: 'active' 
+                }, { 
+                    onConflict: 'email' 
+                })
+
+            if (error) {
+                console.error('Supabase error:', error)
+            } else {
+                console.log('✅ 구독 저장:', email)
+            }
+
+            return res.status(200).json({ success: true })
         }
 
-        // 기타 이벤트는 그냥 OK 응답
-        return res.status(200).json({ success: true, message: 'Event received' });
+        return res.status(200).json({ success: true })
 
     } catch (error) {
-        console.error('Webhook error:', error);
-        return res.status(500).json({ error: 'Webhook processing failed' });
+        console.error('Webhook error:', error)
+        return res.status(500).json({ error: 'Failed' })
     }
 }
